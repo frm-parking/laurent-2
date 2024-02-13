@@ -25,7 +25,7 @@ pub enum Error {
 	#[error("Unknown message")]
 	UnknownMessage,
 
-	#[error("Invalid payload")]
+	#[error("Invalid payload: {0}")]
 	InvalidPayload(String),
 
 	#[error("Authorization failed")]
