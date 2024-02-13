@@ -5,6 +5,7 @@ use crate::event::Event;
 use crate::utils::is_event;
 use crate::ClickDelay;
 use crate::Error;
+use crate::EventKind;
 use crate::RelayAction;
 use crate::Result;
 use futures::SinkExt;
@@ -103,7 +104,18 @@ impl Gateway {
 
 		match as_match!(self.recv().await?) {
 			["#PSW", "SET", "OK"] => Ok(()),
-			["$PSW", "SET", "ERR"] => Err(Error::Auth),
+			["#PSW", "SET", "ERR"] => Err(Error::Auth),
+			["#ERR"] => Err(Error::SyntaxError),
+			_ => Err(Error::UnknownMessage),
+		}
+	}
+
+	pub async fn cfg_event(&self, kind: EventKind, enabled: bool) -> Result<()> {
+		let state = if enabled { "ON" } else { "OFF" };
+		self.send(("$KE", "MSG", "S", kind, "SET", state)).await?;
+
+		match as_match!(self.recv().await?) {
+			["#MSG", "SET", "OK"] => Ok(()),
 			["#ERR"] => Err(Error::SyntaxError),
 			_ => Err(Error::UnknownMessage),
 		}
