@@ -1,0 +1,13 @@
+[package]
+name = "laurent_2"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["Danil Karpenko <limpix31@gmail.com>"]
+
+[dependencies]
+tokio = { version = "1.36", features = ["sync", "io-util", "rt-multi-thread", "full"] }
+tokio-util = { version = "0.7", features = ["codec"] }
+thiserror = "1.0"
+itertools = "0.12"
+futures = "0.3"
