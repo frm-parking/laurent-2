@@ -261,4 +261,44 @@ mod tests {
 
 		Ok(())
 	}
+
+	#[tokio::test]
+	async fn gateway_status() -> Result<()> {
+		let listener = TcpListener::bind("0.0.0.0:0").await?;
+		let addr = listener.local_addr()?;
+
+		let gw = StreamGateway::connect(TcpStream::connect(addr).await?);
+
+		let (mut stream, _) = listener.accept().await.unwrap();
+
+		tokio::spawn(async move {
+			let mut buf = vec![0; 64];
+			let _ = stream.read(&mut buf).await.unwrap();
+			stream.write_all(b"#RDR,3,1\r\n").await.unwrap();
+		});
+
+		assert!(gw.relay_status(3).await?);
+
+		Ok(())
+	}
+
+	#[tokio::test]
+	async fn gateway_unexpected_message() -> Result<()> {
+		let listener = TcpListener::bind("0.0.0.0:0").await?;
+		let addr = listener.local_addr()?;
+
+		let gw = StreamGateway::connect(TcpStream::connect(addr).await?);
+
+		let (mut stream, _) = listener.accept().await.unwrap();
+
+		tokio::spawn(async move {
+			let mut buf = vec![0; 64];
+			let _ = stream.read(&mut buf).await.unwrap();
+			stream.write_all(b"#RDR,3,1\r\n").await.unwrap();
+		});
+
+		assert!(matches!(gw.relay_status(1).await, Err(Error::UnexpectedMessage)));
+
+		Ok(())
+	}
 }
