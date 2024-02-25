@@ -139,11 +139,11 @@ impl Relay {
 pub struct InputLine {
 	line: u32,
 	sub: EventReceiver,
-	gw: Arc<dyn Gateway + Send + 'static>,
+	gw: Arc<dyn Gateway + Send + Sync + 'static>,
 }
 
 impl InputLine {
-	pub fn new(gw: Arc<dyn Gateway + Send + 'static>, line: u32) -> Self {
+	pub fn new(gw: Arc<dyn Gateway + Send + Sync + 'static>, line: u32) -> Self {
 		Self {
 			sub: gw.subscibe(),
 			gw,
