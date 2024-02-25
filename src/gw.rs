@@ -1,4 +1,4 @@
-use crate::as_match;
+use crate::{as_match, Signal};
 use crate::codec::Codec;
 use crate::codec::JoinParts;
 use crate::event::Event;
@@ -31,6 +31,7 @@ pub trait Gateway: Debug {
 	async fn cfg_event(&self, kind: EventKind, enabled: bool) -> Result<()>;
 	async fn relay(&self, relay: u32, action: RelayAction, delay: Option<ClickDelay>) -> Result<()>;
 	async fn relay_status(&self, relay: u32) -> Result<bool>;
+	async fn line_signal(&self, line: u32) -> Result<Signal>;
 }
 
 #[derive(Debug)]
@@ -157,6 +158,17 @@ impl Gateway for StreamGateway {
 			_ => Err(Error::UnknownMessage),
 		}
 	}
+
+	async fn line_signal(&self, line: u32) -> Result<Signal> {
+		self.send(("$KE", "RD", line)).await?;
+
+		match as_match!(self.recv().await?) {
+			["#RD", lid, on] if lid.parse::<u32>()? == line => Ok(on.parse()?),
+			["#RD", _, _] => Err(Error::UnexpectedMessage),
+			["#ERR"] => Err(Error::SyntaxError),
+			_ => Err(Error::UnknownMessage),
+		}
+	}
 }
 
 #[cfg(test)]
@@ -278,6 +290,26 @@ mod tests {
 		});
 
 		assert!(gw.relay_status(3).await?);
+
+		Ok(())
+	}
+
+	#[tokio::test]
+	async fn gateway_line_signal() -> Result<()> {
+		let listener = TcpListener::bind("0.0.0.0:0").await?;
+		let addr = listener.local_addr()?;
+
+		let gw = StreamGateway::connect(TcpStream::connect(addr).await?);
+
+		let (mut stream, _) = listener.accept().await.unwrap();
+
+		tokio::spawn(async move {
+			let mut buf = vec![0; 64];
+			let _ = stream.read(&mut buf).await.unwrap();
+			stream.write_all(b"#RD,3,1\r\n").await.unwrap();
+		});
+
+		assert!(gw.line_signal(3).await?.is_high());
 
 		Ok(())
 	}

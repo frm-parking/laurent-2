@@ -16,6 +16,14 @@ pub enum Signal {
 }
 
 impl Signal {
+	pub fn is_high(&self) -> bool {
+		matches!(self, Self::High)
+	}
+
+	pub fn is_low(&self) -> bool {
+		matches!(self, Self::Low)
+	}
+
 	pub fn from_bool(value: bool) -> Self {
 		match value {
 			true => Self::High,
@@ -131,14 +139,20 @@ impl Relay {
 pub struct InputLine {
 	line: u32,
 	sub: EventReceiver,
+	gw: Arc<dyn Gateway + Send + 'static>,
 }
 
 impl InputLine {
 	pub fn new(gw: Arc<dyn Gateway + Send + 'static>, line: u32) -> Self {
 		Self {
 			sub: gw.subscibe(),
+			gw,
 			line,
 		}
+	}
+
+	pub async fn read_signal(&self) -> Result<Signal> {
+		self.gw.line_signal(self.line).await
 	}
 
 	pub async fn wait_signal(&mut self) -> Result<Signal> {
