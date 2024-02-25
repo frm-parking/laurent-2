@@ -5,7 +5,6 @@ use crate::Gateway;
 use crate::Result;
 use std::fmt::Display;
 use std::fmt::Formatter;
-use std::ops::Range;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -90,15 +89,19 @@ impl Display for ClickDelay {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Relay {
 	line: u32,
-	gw: Arc<Gateway>,
+	gw: Arc<dyn Gateway + Send + Sync + 'static>,
 }
 
 impl Relay {
-	pub fn new(gw: Arc<Gateway>, line: u32) -> Self {
+	pub fn new(gw: Arc<dyn Gateway + Send + Sync + 'static>, line: u32) -> Self {
 		Self { gw, line }
+	}
+
+	pub async fn status(&self) -> Result<bool> {
+		self.gw.relay_status(self.line).await
 	}
 
 	pub async fn on(&self) -> Result<()> {
@@ -131,7 +134,7 @@ pub struct InputLine {
 }
 
 impl InputLine {
-	pub fn new(gw: Arc<Gateway>, line: u32) -> Self {
+	pub fn new(gw: Arc<dyn Gateway + Send + 'static>, line: u32) -> Self {
 		Self {
 			sub: gw.subscibe(),
 			line,
@@ -142,30 +145,6 @@ impl InputLine {
 		loop {
 			match self.sub.recv().await? {
 				Event::Ein { line, signal } if line == self.line => return Ok(signal),
-				_ => (),
-			}
-		}
-	}
-}
-
-#[derive(Debug)]
-pub struct InputLineRange {
-	range: Range<u32>,
-	sub: EventReceiver,
-}
-
-impl InputLineRange {
-	pub fn new(gw: Arc<Gateway>, range: Range<u32>) -> Self {
-		Self {
-			sub: gw.subscibe(),
-			range,
-		}
-	}
-
-	pub async fn wait_signal(&mut self) -> Result<(u32, Signal)> {
-		loop {
-			match self.sub.recv().await? {
-				Event::Ein { line, signal } if self.range.contains(&line) => return Ok((line, signal)),
 				_ => (),
 			}
 		}

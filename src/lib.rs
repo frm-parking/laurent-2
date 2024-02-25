@@ -1,11 +1,11 @@
-mod err;
-mod gw;
 mod codec;
-mod utils;
-mod lio;
+mod err;
 mod event;
+mod gw;
+mod lio;
+mod utils;
 
 pub use err::*;
-pub use lio::*;
-pub use gw::*;
 pub use event::*;
+pub use gw::*;
+pub use lio::*;

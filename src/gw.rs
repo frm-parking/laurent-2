@@ -10,7 +10,8 @@ use crate::RelayAction;
 use crate::Result;
 use futures::SinkExt;
 use futures::StreamExt;
-use std::borrow::Cow;
+use std::fmt::Debug;
+use async_trait::async_trait;
 use tokio::io::AsyncRead;
 use tokio::io::AsyncWrite;
 use tokio::sync::broadcast;
@@ -22,14 +23,24 @@ use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 use tokio_util::codec::Framed;
 
+#[async_trait]
+pub trait Gateway: Debug {
+	fn subscibe(&self) -> BroadcastReceiver<Event>;
+	async fn ping(&self) -> Result<()>;
+	async fn authorize(&self, pwd: &str) -> Result<()>;
+	async fn cfg_event(&self, kind: EventKind, enabled: bool) -> Result<()>;
+	async fn relay(&self, relay: u32, action: RelayAction, delay: Option<ClickDelay>) -> Result<()>;
+	async fn relay_status(&self, relay: u32) -> Result<bool>;
+}
+
 #[derive(Debug)]
-pub struct Gateway {
+pub struct StreamGateway {
 	cmd_tx: Sender<Box<dyn JoinParts + Send + 'static>>,
 	cmd_rx: Mutex<Receiver<Result<Vec<String>>>>,
 	events: Broadcaster<Event>,
 }
 
-impl Gateway {
+impl StreamGateway {
 	pub fn connect<T>(stream: T) -> Self
 	where
 		T: AsyncRead + AsyncWrite + Unpin + Send + 'static,
@@ -83,12 +94,15 @@ impl Gateway {
 			_ => Err(Error::Closed),
 		}
 	}
+}
 
-	pub fn subscibe(&self) -> BroadcastReceiver<Event> {
+#[async_trait]
+impl Gateway for StreamGateway {
+	fn subscibe(&self) -> BroadcastReceiver<Event> {
 		self.events.subscribe()
 	}
 
-	pub async fn ping(&self) -> Result<()> {
+	async fn ping(&self) -> Result<()> {
 		self.send(("$KE",)).await?;
 
 		match as_match!(self.recv().await?) {
@@ -98,9 +112,8 @@ impl Gateway {
 		}
 	}
 
-	pub async fn authorize<'a>(&self, pwd: impl Into<Cow<'a, str>>) -> Result<()> {
-		let pwd = pwd.into().into_owned();
-		self.send(("$KE", "PSW", "SET", pwd)).await?;
+	async fn authorize(&self, pwd: &str) -> Result<()> {
+		self.send(("$KE", "PSW", "SET", pwd.to_owned())).await?;
 
 		match as_match!(self.recv().await?) {
 			["#PSW", "SET", "OK"] => Ok(()),
@@ -110,7 +123,7 @@ impl Gateway {
 		}
 	}
 
-	pub async fn cfg_event(&self, kind: EventKind, enabled: bool) -> Result<()> {
+	async fn cfg_event(&self, kind: EventKind, enabled: bool) -> Result<()> {
 		let state = if enabled { "ON" } else { "OFF" };
 		self.send(("$KE", "MSG", "S", kind, "SET", state)).await?;
 
@@ -121,12 +134,7 @@ impl Gateway {
 		}
 	}
 
-	pub async fn relay(
-		&self,
-		relay: u32,
-		action: RelayAction,
-		delay: Option<ClickDelay>,
-	) -> Result<()> {
+	async fn relay(&self, relay: u32, action: RelayAction, delay: Option<ClickDelay>) -> Result<()> {
 		match delay {
 			None => self.send(("$KE", "REL", relay, action)).await?,
 			Some(delay) => self.send(("$KE", "REL", relay, action, delay)).await?,
@@ -134,6 +142,17 @@ impl Gateway {
 
 		match as_match!(self.recv().await?) {
 			["#REL", "OK"] => Ok(()),
+			["#ERR"] => Err(Error::SyntaxError),
+			_ => Err(Error::UnknownMessage),
+		}
+	}
+
+	async fn relay_status(&self, relay: u32) -> Result<bool> {
+		self.send(("$KE", "RDR", relay)).await?;
+
+		match as_match!(self.recv().await?) {
+			["#RDR", rid, on] if rid.parse::<u32>()? == relay => Ok(on == "1"),
+			["#RDR", _, _] => Err(Error::UnexpectedMessage),
 			["#ERR"] => Err(Error::SyntaxError),
 			_ => Err(Error::UnknownMessage),
 		}
@@ -154,7 +173,7 @@ mod tests {
 		let listener = TcpListener::bind("0.0.0.0:0").await?;
 		let addr = listener.local_addr()?;
 
-		let gw = Gateway::connect(TcpStream::connect(addr).await?);
+		let gw = StreamGateway::connect(TcpStream::connect(addr).await?);
 
 		let (mut stream, _) = listener.accept().await.unwrap();
 
@@ -174,7 +193,7 @@ mod tests {
 		let listener = TcpListener::bind("0.0.0.0:0").await?;
 		let addr = listener.local_addr()?;
 
-		let gw = Gateway::connect(TcpStream::connect(addr).await?);
+		let gw = StreamGateway::connect(TcpStream::connect(addr).await?);
 
 		let (mut stream, _) = listener.accept().await.unwrap();
 
@@ -228,7 +247,7 @@ mod tests {
 		let listener = TcpListener::bind("0.0.0.0:0").await?;
 		let addr = listener.local_addr()?;
 
-		let gw = Gateway::connect(TcpStream::connect(addr).await?);
+		let gw = StreamGateway::connect(TcpStream::connect(addr).await?);
 
 		let (mut stream, _) = listener.accept().await.unwrap();
 
