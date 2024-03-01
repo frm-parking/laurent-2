@@ -8,6 +8,7 @@ use std::fmt::Formatter;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::Mutex;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Signal {
@@ -138,14 +139,14 @@ impl Relay {
 #[derive(Debug)]
 pub struct InputLine {
 	line: u32,
-	sub: EventReceiver,
+	sub: Mutex<EventReceiver>,
 	gw: Arc<dyn Gateway + Send + Sync + 'static>,
 }
 
 impl InputLine {
 	pub fn new(gw: Arc<dyn Gateway + Send + Sync + 'static>, line: u32) -> Self {
 		Self {
-			sub: gw.subscibe(),
+			sub: Mutex::new(gw.subscibe()),
 			gw,
 			line,
 		}
@@ -155,9 +156,9 @@ impl InputLine {
 		self.gw.line_signal(self.line).await
 	}
 
-	pub async fn wait_signal(&mut self) -> Result<Signal> {
+	pub async fn wait_signal(&self) -> Result<Signal> {
 		loop {
-			match self.sub.recv().await? {
+			match self.sub.lock().await.recv().await? {
 				Event::Ein { line, signal } if line == self.line => return Ok(signal),
 				_ => (),
 			}
