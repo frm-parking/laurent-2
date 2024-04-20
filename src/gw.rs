@@ -60,10 +60,16 @@ impl StreamGateway {
 						match msg.as_deref() {
 							Ok([ty, rest @ ..]) if is_event(ty) => {
 								if let Ok(event) = Event::try_from(rest) {
-									event_tx.send(event).expect("Failed to send event");
+									if event_tx.send(event).is_err() {
+										break;
+									}
 								}
 							},
-							_ => cmd_rx_tx.send(msg).await.expect("Failed to return command response"),
+							_ => {
+								if cmd_rx_tx.send(msg).await.is_err() {
+									break;
+								}
+							},
 						}
 					},
 					cmd = cmd_tx_rx.recv() => {
